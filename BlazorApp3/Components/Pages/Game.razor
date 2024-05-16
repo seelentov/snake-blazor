@@ -1,0 +1,270 @@
+﻿@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Snake</PageTitle>
+
+<style>
+    .game {
+        position: relative;
+    }
+
+    .label {
+        position: absolute;
+        top: calc(50% - 100px);
+        left: calc(50% - 150px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 10px;
+        border: 1px solid black;
+        background-color: white;
+        color: black;
+        align-items: center;
+        height: 200px;
+        width: 300px;
+        font-size: 36px;
+        text-align: center;
+    }
+
+    .map {
+        display: grid;
+        grid-template-columns: @($"repeat({_map.Width}, 50px)");
+        grid-template-rows: @($"repeat({_map.Height}, 50px)");
+    }
+
+    .cell {
+        outline: 1px solid black;
+        outline-offset: -2px;
+        width: 50px;
+        height: 50px;
+    }
+
+        .cell span {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+</style>
+<div class="game">
+
+    @if (_gameStatus == GameStatus.lose)
+    {
+        <div class="label">
+            <p>LOSE!</p>
+            <p>SCORE: @_score</p>
+        </div>
+    }
+    @if (_gameStatus == GameStatus.pause)
+    {
+        <div class="label">
+            <p>PAUSE</p>
+        </div>
+    }
+    @if (_gameStatus == GameStatus.win)
+    {
+        <div class="label">
+            <p>YOU WIN!</p>
+            <p>SCORE: @_score</p>
+        </div>
+    }
+
+    <div class="map">
+        @foreach (var cell in _map)
+        {
+            <div class="cell">
+                @if (cell.GetSourceType() == SourceType.css)
+                {
+                    <span style="@cell.GetSource()"></span>
+                }
+                else
+                {
+                    <img src="@cell.GetSource()" />
+                }
+            </div>
+        }
+    </div>
+</div>
+<input type="type" name="name" value="" @ref="mainRef" @onkeydown="HandleKeyDown" autocomplete="off" style="width: 0px; height: 0px; opacity: 0" />
+@code {
+    private ElementReference mainRef;
+
+    private Point _playerHead;
+    private List<Point> _playerTail = new();
+
+    private Head _playerHeadBlock = new();
+    private Tale _playerTaleBlock = new();
+    private Empty _emptyBlock = new();
+    private Apple _appleBlock = new();
+
+    private Direction _playerDirection;
+    private Direction _lastDirection;
+
+    private int _score = 0;
+
+    private List<Point> _apples = new();
+
+    private Matrix<Block> _map;
+
+    private GameStatus _gameStatus;
+
+    private enum GameStatus
+    {
+        play, pause, lose, win
+    }
+
+    protected override void OnInitialized()
+    {
+        _playerHead = new Point(0, 0);
+
+        _playerDirection = Direction.right;
+        _lastDirection = Direction.right;
+
+        _score = 0;
+
+        _map = new(10, 10);
+
+        _map.Fill(_emptyBlock);
+        //CreateApple();
+        _apples.Add(new Point(4, 0));
+        _gameStatus = GameStatus.play;
+
+        GameLoop();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Focus();
+    }
+
+    private async void Focus()
+    {
+        await mainRef.FocusAsync();
+    }
+
+    private async void GameLoop()
+    {
+        while (true)
+        {
+            if (_gameStatus == GameStatus.play)
+            {
+                DrawMap();
+
+                Move();
+            }
+            else if (_gameStatus == GameStatus.lose)
+            {
+
+            }
+            else if (_gameStatus == GameStatus.win)
+            {
+
+            }
+            else
+            {
+
+            }
+            StateHasChanged();
+            await Task.Delay(100);
+        }
+    }
+
+    private void Rotate(Direction direction)
+    {
+        if (
+            !((direction == Direction.up) && (_lastDirection == Direction.down)) ||
+            !((direction == Direction.left) && (_lastDirection == Direction.right)) ||
+            !((direction == Direction.right) && (_lastDirection == Direction.left)) ||
+            !((direction == Direction.down) && (_lastDirection == Direction.up))
+        )
+        {
+            _playerDirection = direction;
+        }
+    }
+
+    private Point[] GetTail()
+    {
+        return _playerTail.AsEnumerable().Reverse().ToArray()[0.._score];
+    }
+
+    private void Move()
+    {
+        _lastDirection = _playerDirection;
+        _playerHeadBlock.ChangeDirection(_lastDirection);
+
+        if (
+            !_map.IsCellExist(_playerHead) ||
+            GetTail().Any(point => point.X == _playerHead.X && point.Y == _playerHead.Y)
+        )
+        {
+            _gameStatus = GameStatus.lose;
+        }
+        else
+        {
+            for (int i = 0; i < _apples.Count; i++)
+            {
+                if (_apples[i].X == _playerHead.X && _apples[i].Y == _playerHead.Y)
+                {
+                    _score++;
+                    _apples.RemoveAt(i);
+                    CreateApple();
+                }
+            }
+
+            _playerTail.Add(_playerHead.Copy());
+            _playerHead.Move(_lastDirection);
+        }
+    }
+
+    private void CreateApple()
+    {
+        Point? point = _map.RandPoint(point => !point.Equals(_playerHead) && !_playerTail.Any(playerTailPoint => playerTailPoint.Equals(point)) && !_apples.Any(applePoint => applePoint.Equals(point)));
+
+        if (point != null)
+        {
+            _apples.Add(point);
+        }
+        else
+        {
+            _gameStatus = GameStatus.win;
+        }
+    }
+
+    private void DrawMap()
+    {
+        _map.Fill(_emptyBlock);
+
+        foreach (var point in _apples)
+        {
+            _map.Push(point, _appleBlock);
+        }
+
+        foreach (var point in GetTail())
+        {
+            _map.Push(point, _playerTaleBlock);
+        }
+
+        _map.Push(_playerHead, _playerHeadBlock);
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        var PressedKey = e.Code;
+        switch (PressedKey)
+        {
+            case "KeyW":
+                Rotate(Direction.up);
+                break;
+            case "KeyA":
+                Rotate(Direction.left);
+                break;
+            case "KeyS":
+                Rotate(Direction.down);
+                break;
+            case "KeyD":
+                Rotate(Direction.right);
+                break;
+        }
+    }
+
+}
